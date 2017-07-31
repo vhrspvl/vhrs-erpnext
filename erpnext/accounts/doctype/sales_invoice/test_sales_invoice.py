@@ -12,6 +12,8 @@ from erpnext.stock.doctype.purchase_receipt.test_purchase_receipt import set_per
 from erpnext.exceptions import InvalidAccountCurrency, InvalidCurrency
 from erpnext.stock.doctype.serial_no.serial_no import SerialNoWarehouseError
 from frappe.model.naming import make_autoname
+from erpnext.accounts.doctype.account.test_account import get_inventory_account
+from erpnext.controllers.taxes_and_totals import get_itemised_tax_breakup_data
 
 class TestSalesInvoice(unittest.TestCase):
 	def make(self):
@@ -41,6 +43,19 @@ class TestSalesInvoice(unittest.TestCase):
 		import time
 		time.sleep(1)
 		self.assertRaises(frappe.TimestampMismatchError, w2.save)
+
+	def test_sales_invoice_change_naming_series(self):
+		si = frappe.copy_doc(test_records[2])
+		si.insert()
+		si.naming_series = 'TEST-'
+
+		self.assertRaises(frappe.CannotChangeConstantError, si.save)
+
+		si = frappe.copy_doc(test_records[1])
+		si.insert()
+		si.naming_series = 'TEST-'
+
+		self.assertRaises(frappe.CannotChangeConstantError, si.save)
 
 	def test_sales_invoice_calculation_base_currency(self):
 		si = frappe.copy_doc(test_records[2])
@@ -474,8 +489,8 @@ class TestSalesInvoice(unittest.TestCase):
 		self.assertEquals(frappe.db.get_value("Sales Invoice", w.name, "outstanding_amount"), 561.8)
 
 	def test_sales_invoice_gl_entry_without_perpetual_inventory(self):
-		set_perpetual_inventory(0)
 		si = frappe.copy_doc(test_records[1])
+		set_perpetual_inventory(0, si.company)
 		si.insert()
 		si.submit()
 
@@ -582,7 +597,7 @@ class TestSalesInvoice(unittest.TestCase):
 			order by account asc, debit asc""", si.name, as_dict=1)
 		self.assertTrue(gl_entries)
 
-		stock_in_hand = frappe.db.get_value("Account", {"warehouse": "_Test Warehouse - _TC"})
+		stock_in_hand = get_inventory_account('_Test Company')
 
 		expected_gl_entries = sorted([
 			[si.debit_to, 630.0, 0.0],
@@ -603,6 +618,7 @@ class TestSalesInvoice(unittest.TestCase):
 			self.assertEquals(expected_gl_entries[i][2], gle.credit)
 
 		si.cancel()
+		frappe.delete_doc('Sales Invoice', si.name)
 		gle = frappe.db.sql("""select * from `tabGL Entry`
 			where voucher_type='Sales Invoice' and voucher_no=%s""", si.name)
 
@@ -737,6 +753,12 @@ class TestSalesInvoice(unittest.TestCase):
 		self.assertFalse(frappe.db.get_value("Serial No", serial_nos[0], "warehouse"))
 		self.assertEquals(frappe.db.get_value("Serial No", serial_nos[0],
 			"delivery_document_no"), si.name)
+		self.assertEquals(frappe.db.get_value("Serial No", serial_nos[0], "sales_invoice"),
+			si.name)
+
+		# check if the serial number is already linked with any other Sales Invoice
+		_si = frappe.copy_doc(si.as_dict())
+		self.assertRaises(frappe.ValidationError, _si.insert)
 
 		return si
 
@@ -750,6 +772,7 @@ class TestSalesInvoice(unittest.TestCase):
 		self.assertEquals(frappe.db.get_value("Serial No", serial_nos[0], "warehouse"), "_Test Warehouse - _TC")
 		self.assertFalse(frappe.db.get_value("Serial No", serial_nos[0],
 			"delivery_document_no"))
+		self.assertFalse(frappe.db.get_value("Serial No", serial_nos[0], "sales_invoice"))
 
 	def test_serialize_status(self):
 		serial_no = frappe.get_doc({
@@ -767,6 +790,27 @@ class TestSalesInvoice(unittest.TestCase):
 		si.insert()
 
 		self.assertRaises(SerialNoWarehouseError, si.submit)
+
+	def test_serial_numbers_against_delivery_note(self):
+		""" 
+			check if the sales invoice item serial numbers and the delivery note items
+			serial numbers are same
+		"""
+		from erpnext.stock.doctype.stock_entry.test_stock_entry import make_serialized_item
+		from erpnext.stock.doctype.delivery_note.test_delivery_note import create_delivery_note
+		from erpnext.stock.doctype.delivery_note.delivery_note import make_sales_invoice
+		from erpnext.stock.doctype.serial_no.serial_no import get_serial_nos
+
+		se = make_serialized_item()
+		serial_nos = get_serial_nos(se.get("items")[0].serial_no)
+
+		dn = create_delivery_note(item=se.get("items")[0].item_code, serial_no=serial_nos[0])
+		dn.submit()
+
+		si = make_sales_invoice(dn.name)
+		si.save()
+
+		self.assertEquals(si.get("items")[0].serial_no, dn.get("items")[0].serial_no)
 
 	def test_invoice_due_date_against_customers_credit_days(self):
 		# set customer's credit days
@@ -809,11 +853,11 @@ class TestSalesInvoice(unittest.TestCase):
 			["incoming_rate", "stock_value_difference"])
 
 		self.assertEquals(flt(incoming_rate, 3), abs(flt(outgoing_rate, 3)))
-
+		stock_in_hand_account = get_inventory_account('_Test Company', si1.items[0].warehouse)
 
 		# Check gl entry
 		gle_warehouse_amount = frappe.db.get_value("GL Entry", {"voucher_type": "Sales Invoice",
-			"voucher_no": si1.name, "account": "_Test Warehouse - _TC"}, "debit")
+			"voucher_no": si1.name, "account": stock_in_hand_account}, "debit")
 
 		self.assertEquals(gle_warehouse_amount, stock_value_difference)
 
@@ -1062,6 +1106,93 @@ class TestSalesInvoice(unittest.TestCase):
 			for i, k in enumerate(expected_values["keys"]):
 				self.assertEquals(d.get(k), expected_values[d.item_code][i])
 
+	def test_item_wise_tax_breakup_india(self):
+		frappe.flags.country = "India"
+		
+		si = self.create_si_to_test_tax_breakup()
+		itemised_tax, itemised_taxable_amount = get_itemised_tax_breakup_data(si)
+
+		expected_itemised_tax = {
+			"999800": {
+				"Service Tax": {
+					"tax_rate": 10.0,
+					"tax_amount": 1500.0
+				}
+			}
+		}
+		expected_itemised_taxable_amount = {
+			"999800": 15000.0
+		}
+
+		self.assertEqual(itemised_tax, expected_itemised_tax)
+		self.assertEqual(itemised_taxable_amount, expected_itemised_taxable_amount)
+		
+		frappe.flags.country = None
+
+	def test_item_wise_tax_breakup_outside_india(self):
+		frappe.flags.country = "United States"
+		
+		si = self.create_si_to_test_tax_breakup()
+
+		itemised_tax, itemised_taxable_amount = get_itemised_tax_breakup_data(si)
+
+		expected_itemised_tax = {
+			"_Test Item": {
+				"Service Tax": {
+					"tax_rate": 10.0,
+					"tax_amount": 1000.0
+				}
+			},
+			"_Test Item 2": {
+				"Service Tax": {
+					"tax_rate": 10.0,
+					"tax_amount": 500.0
+				}
+			}
+		}
+		expected_itemised_taxable_amount = {
+			"_Test Item": 10000.0,
+			"_Test Item 2": 5000.0
+		}
+
+		self.assertEqual(itemised_tax, expected_itemised_tax)
+		self.assertEqual(itemised_taxable_amount, expected_itemised_taxable_amount)
+		
+		frappe.flags.country = None
+
+	def create_si_to_test_tax_breakup(self):
+		si = create_sales_invoice(qty=100, rate=50, do_not_save=True)
+		si.append("items", {
+			"item_code": "_Test Item",
+			"gst_hsn_code": "999800",
+			"warehouse": "_Test Warehouse - _TC",
+			"qty": 100,
+			"rate": 50,
+			"income_account": "Sales - _TC",
+			"expense_account": "Cost of Goods Sold - _TC",
+			"cost_center": "_Test Cost Center - _TC"
+		})
+		si.append("items", {
+			"item_code": "_Test Item 2",
+			"gst_hsn_code": "999800",
+			"warehouse": "_Test Warehouse - _TC",
+			"qty": 100,
+			"rate": 50,
+			"income_account": "Sales - _TC",
+			"expense_account": "Cost of Goods Sold - _TC",
+			"cost_center": "_Test Cost Center - _TC"
+		})
+
+		si.append("taxes", {
+			"charge_type": "On Net Total",
+			"account_head": "_Test Account Service Tax - _TC",
+			"cost_center": "_Test Cost Center - _TC",
+			"description": "Service Tax",
+			"rate": 10
+		})
+		si.insert()
+		return si
+
 def create_sales_invoice(**args):
 	si = frappe.new_doc("Sales Invoice")
 	args = frappe._dict(args)
@@ -1081,6 +1212,7 @@ def create_sales_invoice(**args):
 
 	si.append("items", {
 		"item_code": args.item or args.item_code or "_Test Item",
+		"gst_hsn_code": "999800",
 		"warehouse": args.warehouse or "_Test Warehouse - _TC",
 		"qty": args.qty or 1,
 		"rate": args.rate or 100,

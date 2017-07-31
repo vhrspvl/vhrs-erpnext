@@ -85,6 +85,10 @@ class SerialNo(StockController):
 				self.supplier, self.supplier_name = \
 					frappe.db.get_value("Purchase Receipt", purchase_sle.voucher_no,
 						["supplier", "supplier_name"])
+
+			# If sales return entry
+			if self.purchase_document_type == 'Delivery Note':
+				self.sales_invoice = None
 		else:
 			for fieldname in ("purchase_document_type", "purchase_document_no",
 				"purchase_date", "purchase_time", "purchase_rate", "supplier", "supplier_name"):
@@ -160,7 +164,7 @@ class SerialNo(StockController):
 	def after_rename(self, old, new, merge=False):
 		"""rename serial_no text fields"""
 		for dt in frappe.db.sql("""select parent from tabDocField
-			where fieldname='serial_no' and fieldtype='Text'"""):
+			where fieldname='serial_no' and fieldtype in ('Text', 'Small Text')"""):
 
 			for item in frappe.db.sql("""select name, serial_no from `tab%s`
 				where serial_no like '%%%s%%'""" % (dt[0], frappe.db.escape(old))):
@@ -324,3 +328,26 @@ def update_serial_nos_after_submit(controller, parentfield):
 						update_rejected_serial_nos = False
 						if accepted_serial_nos_updated:
 							break
+
+def update_maintenance_status():
+	serial_nos = frappe.db.sql('''select name from `tabSerial No` where (amc_expiry_date<%s or
+		warranty_expiry_date<%s) and maintenance_status not in ('Out of Warranty', 'Out of AMC')''',
+		(nowdate(), nowdate()))
+	for serial_no in serial_nos:
+		doc = frappe.get_doc("Serial No", serial_no[0])
+		doc.set_maintenance_status()
+		frappe.db.set_value('Serial No', doc.name, 'maintenance_status', doc.maintenance_status)
+
+def get_delivery_note_serial_no(item_code, qty, delivery_note):
+	serial_nos = ''
+	dn_serial_nos = frappe.db.sql_list(""" select name from `tabSerial No`
+		where item_code = %(item_code)s and delivery_document_no = %(delivery_note)s
+		and sales_invoice is null limit {0}""".format(cint(qty)), {
+		'item_code': item_code,
+		'delivery_note': delivery_note
+	})
+
+	if dn_serial_nos and len(dn_serial_nos)>0:
+		serial_nos = '\n'.join(dn_serial_nos)
+
+	return serial_nos

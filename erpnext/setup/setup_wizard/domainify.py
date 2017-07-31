@@ -3,6 +3,7 @@
 
 from __future__ import unicode_literals
 import frappe
+from frappe import _
 
 def get_domain(domain):
 	'''Written as a function to prevent data mutation effects'''
@@ -78,8 +79,11 @@ def setup_domain(domain):
 	setup_properties(data)
 	set_values(data)
 	setup_sidebar_items(data)
+	update_module_def_restrict_to_domain()
+
 	if data.get('default_portal_role'):
 		frappe.db.set_value('Portal Settings', None, 'default_role', data.get('default_portal_role'))
+
 	frappe.clear_cache()
 
 def setup_desktop_icons(data):
@@ -105,8 +109,9 @@ def setup_roles(data):
 
 	if data.allow_roles:
 		# remove all roles other than allowed roles
+		active_domains = frappe.get_active_domains()
 		data.allow_roles += ['Administrator', 'Guest', 'System Manager', 'All']
-		for role in frappe.get_all('Role'):
+		for role in frappe.get_all('Role', filters = {"restrict_to_domain": ("not in", active_domains)}):
 			if not (role.name in data.allow_roles):
 				remove_role(role.name)
 
@@ -136,9 +141,24 @@ def setup_sidebar_items(data):
 		frappe.db.sql('''update `tabPortal Menu Item` set enabled=0
 			where route in ({0})'''.format(', '.join(['"{0}"'.format(d) for d in data.remove_sidebar_items])))
 
-
 def reset():
 	from frappe.desk.page.setup_wizard.setup_wizard import add_all_roles_to
 	add_all_roles_to('Administrator')
 
 	frappe.db.sql('delete from `tabProperty Setter`')
+
+def update_module_def_restrict_to_domain():
+	""" set the restrict to domain for the module def """
+
+	module_def_restrict_to_domain_mapper = {
+		"Schools": 'Education'
+	}
+
+	lang = frappe.db.get_single_value("System Settings", "language") or "en"
+	for module, domain in module_def_restrict_to_domain_mapper.iteritems():
+		if frappe.db.exists("Domain", _(domain, lang)):
+			frappe.db.set_value("Module Def", module, "restrict_to_domain", _(domain, lang))
+		elif frappe.db.exists("Domain", domain):
+			frappe.db.set_value("Module Def", module, "restrict_to_domain", domain)
+		else:
+			pass

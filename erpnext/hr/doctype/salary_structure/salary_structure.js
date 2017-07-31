@@ -7,8 +7,8 @@ cur_frm.add_fetch('company', 'default_letter_head', 'letter_head');
 
 
 cur_frm.cscript.onload = function(doc, dt, dn){
-	e_tbl = doc.earnings || [];
-	d_tbl = doc.deductions || [];
+	var e_tbl = doc.earnings || [];
+	var d_tbl = doc.deductions || [];
 	if (e_tbl.length == 0 && d_tbl.length == 0)
 		return function(r, rt) { refresh_many(['earnings', 'deductions']);};
 }
@@ -113,15 +113,18 @@ frappe.ui.form.on('Salary Structure', {
 		var d = new frappe.ui.Dialog({
 			title: __("Preview Salary Slip"),
 			fields: [
-				{"fieldname":"employee", "fieldtype":"Select", "label":__("Employee"),
-				options: $.map(frm.doc.employees, function(d) { return d.employee }), reqd: 1, label:"Employee"},
-				{fieldname:"fetch", "label":__("Show Salary Slip"), "fieldtype":"Button"}
+				{	"fieldname":"employee", "fieldtype":"Select", "label":__("Employee"),
+					options: $.map(frm.doc.employees, function(d) { return d.employee }), reqd: 1 },
+				{	fieldname:"fetch", "label":__("Show Salary Slip"), "fieldtype":"Button"}
 			]
 		});
 		d.get_input("fetch").on("click", function() {
 			var values = d.get_values();
 			if(!values) return;
-			frm.doc.salary_slip_based_on_timesheet?print_format="Salary Slip based on Timesheet":print_format="Salary Slip Standard";
+			var print_format;
+			frm.doc.salary_slip_based_on_timesheet ?
+				print_format="Salary Slip based on Timesheet" :
+				print_format="Salary Slip Standard";
 
 			frappe.call({
 				method: "erpnext.hr.doctype.salary_structure.salary_structure.make_salary_slip",

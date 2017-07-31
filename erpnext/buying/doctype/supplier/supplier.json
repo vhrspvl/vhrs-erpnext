@@ -74,7 +74,7 @@
    "report_hide": 0, 
    "reqd": 0, 
    "search_index": 0, 
-   "set_only_once": 0, 
+   "set_only_once": 1, 
    "unique": 0
   }, 
   {
@@ -688,7 +688,7 @@
    "collapsible": 0, 
    "columns": 0, 
    "depends_on": "", 
-   "description": "Mention if non-standard receivable account", 
+   "description": "Mention if non-standard payable account", 
    "fieldname": "accounts", 
    "fieldtype": "Table", 
    "hidden": 0, 
@@ -850,7 +850,7 @@
  "issingle": 0, 
  "istable": 0, 
  "max_attachments": 0, 
- "modified": "2017-05-05 04:24:03.884380", 
+ "modified": "2017-06-13 14:29:16.310834", 
  "modified_by": "Administrator", 
  "module": "Buying", 
  "name": "Supplier", 

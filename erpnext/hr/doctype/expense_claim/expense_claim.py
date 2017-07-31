@@ -11,6 +11,7 @@ from erpnext.accounts.party import get_party_account
 from erpnext.accounts.general_ledger import make_gl_entries
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
 from erpnext.controllers.accounts_controller import AccountsController
+from frappe.utils.csvutils import getlink
 
 class InvalidExpenseApproverError(frappe.ValidationError): pass
 
@@ -38,10 +39,13 @@ class ExpenseClaim(AccountsController):
 			"2": "Cancelled"
 		}[cstr(self.docstatus or 0)]
 
-		if self.total_sanctioned_amount == self.total_amount_reimbursed and self.docstatus == 1:
+		if self.total_sanctioned_amount > 0 and self.total_sanctioned_amount == self.total_amount_reimbursed \
+			and self.docstatus == 1 and self.approval_status == 'Approved':
 			self.status = "Paid"
-		elif self.docstatus == 1:
+		elif self.total_sanctioned_amount > 0 and self.docstatus == 1 and self.approval_status == 'Approved':
 			self.status = "Unpaid"
+		elif self.docstatus == 1 and self.approval_status == 'Rejected':
+			self.status = 'Rejected'
 
 	def set_payable_account(self):
 		if not self.payable_account and not self.is_paid:
@@ -146,7 +150,7 @@ class ExpenseClaim(AccountsController):
 			frappe.throw(_("Cost center is required to book an expense claim"))
 
 		if not self.payable_account:
-			frappe.throw(_("Please set default payable account in the employee {0}").format(self.employee))
+			frappe.throw(_("Please set default payable account for the company {0}").format(getlink("Company",self.company)))
 
 		if self.is_paid:
 			if not self.mode_of_payment:
@@ -156,6 +160,9 @@ class ExpenseClaim(AccountsController):
 		self.total_claimed_amount = 0
 		self.total_sanctioned_amount = 0
 		for d in self.get('expenses'):
+			if self.approval_status == 'Rejected':
+				d.sanctioned_amount = 0.0
+
 			self.total_claimed_amount += flt(d.claim_amount)
 			self.total_sanctioned_amount += flt(d.sanctioned_amount)
 
