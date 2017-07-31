@@ -85,6 +85,12 @@ frappe.ui.form.on("Task", {
   },
 
 });
+frappe.ui.form.on("Task Candidate", "form_render", function(frm, cdt, cdn) {
+  /*if (!frm.doc.user) {
+    console.log(frm.doc.candidates)
+    //  frm.set_value('user', frappe.session.user);
+  }*/
+})
 
 frappe.ui.form.on("Task Candidate", {
   edit_candidate: function(frm, doctype, name) {

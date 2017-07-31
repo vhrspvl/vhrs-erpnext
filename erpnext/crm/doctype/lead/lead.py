@@ -5,9 +5,8 @@ from __future__ import unicode_literals
 import frappe
 from frappe import _
 from frappe.utils import (cstr, validate_email_add,
-                          cint, comma_and, has_gravatar, now)
+                          cint, comma_and, has_gravatar, now, getdate, nowdate)
 from frappe.model.mapper import get_mapped_doc
-from datetime import datetime
 from erpnext.controllers.selling_controller import SellingController
 from frappe.geo.address_and_contact import load_address_and_contact
 from erpnext.accounts.party import set_taxes
@@ -48,7 +47,7 @@ class Lead(SellingController):
 
             self.image = has_gravatar(self.email_id)
 
-        if self.contact_date and self.contact_date < datetime.now():
+        if self.contact_date and getdate(self.contact_date) < getdate(nowdate()):
             frappe.throw(_("Next Contact Date cannot be in the past"))
 
     def on_update(self):
