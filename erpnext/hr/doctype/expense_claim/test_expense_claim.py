@@ -25,39 +25,12 @@ class TestExpenseClaim(unittest.TestCase):
 		task_name = frappe.db.get_value("Task", {"project": "_Test Project 1"})
 		payable_account = get_payable_account("Wind Power LLC")
 
-<<<<<<< HEAD
-		expense_claim = frappe.get_doc({
-			 "doctype": "Expense Claim",
-			 "employee": "_T-Employee-0001",
-			 "payable_account": payable_account,
-			 "approval_status": "Approved",
-			 "project": "_Test Project 1",
-			 "task": task_name,
-			 "expenses":
-			 	[{ "expense_type": "Travel", "default_account": "Travel Expenses - WP", "claim_amount": 300, "sanctioned_amount": 200 }]
-	})
-		expense_claim.submit()
-=======
 		make_expense_claim(payable_account, 300, 200, "Wind Power LLC","Travel Expenses - WP", "_Test Project 1", task_name)
->>>>>>> upstream/master
 
 		self.assertEqual(frappe.db.get_value("Task", task_name, "total_expense_claim"), 200)
 		self.assertEqual(frappe.db.get_value("Project", "_Test Project 1", "total_expense_claim"), 200)
 
-<<<<<<< HEAD
-		expense_claim2 = frappe.get_doc({
-			 "doctype": "Expense Claim",
-			 "employee": "_T-Employee-0001",
-			 "approval_status": "Approved",
-			 "project": "_Test Project 1",
-			 "task": task_name,
-			 "expenses":
-			 	[{ "expense_type": "Travel", "default_account": "Travel Expenses - WP", "claim_amount": 600, "sanctioned_amount": 500 }]
-})
-		expense_claim2.submit()
-=======
 		expense_claim2 = make_expense_claim(payable_account, 600, 500, "Wind Power LLC", "Travel Expenses - WP","_Test Project 1", task_name)
->>>>>>> upstream/master
 
 		self.assertEqual(frappe.db.get_value("Task", task_name, "total_expense_claim"), 700)
 		self.assertEqual(frappe.db.get_value("Project", "_Test Project 1", "total_expense_claim"), 700)

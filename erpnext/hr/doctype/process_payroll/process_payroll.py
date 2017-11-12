@@ -305,15 +305,6 @@ class ProcessPayroll(Document):
 						"cost_center": self.cost_center,
 						"project": self.project
 					})
-<<<<<<< HEAD
-				adjustment_amt = adjustment_amt-(loan_amounts.total_loan_repayment)
-
-			account_amt_list.append({
-					"account": default_payroll_payable_account,
-					"credit_in_account_currency": adjustment_amt
-				})
-			journal_entry.set("accounts", account_amt_list)
-=======
 				payable_amount -= flt(loan_amounts.total_loan_repayment, precision)
 
 			# Payable amount
@@ -323,7 +314,6 @@ class ProcessPayroll(Document):
 			})
 
 			journal_entry.set("accounts", accounts)
->>>>>>> upstream/master
 			journal_entry.save()
 
 			try:
@@ -349,27 +339,15 @@ class ProcessPayroll(Document):
 			journal_entry.company = self.company
 			journal_entry.posting_date = nowdate()
 
-<<<<<<< HEAD
-			account_amt_list = []
-
-			account_amt_list.append({
-=======
 			payment_amount = flt(total_salary_amount.rounded_total, precision)
 
 			journal_entry.set("accounts", [
 				{
->>>>>>> upstream/master
 					"account": self.payment_account,
 					"credit_in_account_currency": payment_amount
 				},
 				{
 					"account": default_payroll_payable_account,
-<<<<<<< HEAD
-					"debit_in_account_currency": total_salary_amount.rounded_total
-				})
-			journal_entry.set("accounts", account_amt_list)
-		return journal_entry.as_dict()
-=======
 					"debit_in_account_currency": payment_amount
 				}
 			])
@@ -379,7 +357,6 @@ class ProcessPayroll(Document):
 				_("There are no submitted Salary Slips to process."),
 				title="Error", indicator="red"
 			)
->>>>>>> upstream/master
 
 	def update_salary_slip_status(self, jv_name = None):
 		ss_list = self.get_sal_slip_list(ss_status=1)
