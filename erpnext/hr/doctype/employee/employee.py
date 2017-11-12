@@ -286,7 +286,6 @@ def deactivate_sales_person(status=None, employee=None):
 
 
 @frappe.whitelist()
-<<<<<<< HEAD
 def create_user(employee, user=None):
     emp = frappe.get_doc("Employee", employee)
 
@@ -316,7 +315,6 @@ def create_user(employee, user=None):
     })
     user.insert()
     return user.name
-=======
 def create_user(employee, user = None):
 	emp = frappe.get_doc("Employee", employee)
 
@@ -358,4 +356,3 @@ def get_employee_emails(employee_list):
 			employee_emails.append(user or email)
 
 	return employee_emails
->>>>>>> upstream/master
