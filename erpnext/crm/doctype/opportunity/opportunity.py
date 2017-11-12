@@ -42,10 +42,28 @@ class Opportunity(TransactionBase):
 		if not self.with_items:
 			self.items = []
 
-
 	def make_new_lead_if_required(self):
 		"""Set lead against new opportunity"""
 		if not (self.lead or self.customer) and self.contact_email:
+			# check if customer is already created agains the self.contact_email
+			customer = frappe.db.sql("""select
+				distinct `tabDynamic Link`.link_name as customer
+				from 
+					`tabContact`,
+					`tabDynamic Link`
+				where `tabContact`.email_id='{0}'
+				and 
+					`tabContact`.name=`tabDynamic Link`.parent
+				and
+					ifnull(`tabDynamic Link`.link_name, '')<>'' 
+				and 
+					`tabDynamic Link`.link_doctype='Customer' 
+			""".format(self.contact_email), as_dict=True)
+			if customer and customer[0].customer:
+				self.customer = customer[0].customer
+				self.enquiry_from = "Customer"
+				return
+
 			lead_name = frappe.db.get_value("Lead", {"email_id": self.contact_email})
 			if not lead_name:
 				sender_name = get_fullname(self.contact_email)
@@ -84,11 +102,19 @@ class Opportunity(TransactionBase):
 		self.delete_events()
 
 	def has_active_quotation(self):
-		return frappe.db.sql("""
-			select q.name 
-			from `tabQuotation` q, `tabQuotation Item` qi
-			where q.name = qi.parent and q.docstatus=1 and qi.prevdoc_docname =%s 
-			and q.status not in ('Lost', 'Closed')""", self.name)
+		if not self.with_items:
+			return frappe.get_all('Quotation',
+				{
+					'opportunity': self.name,
+					'status': ("not in", ['Lost', 'Closed']),
+					'docstatus': 1
+				}, 'name')
+		else:
+			return frappe.db.sql("""
+				select q.name
+				from `tabQuotation` q, `tabQuotation Item` qi
+				where q.name = qi.parent and q.docstatus=1 and qi.prevdoc_docname =%s
+				and q.status not in ('Lost', 'Closed')""", self.name)
 
 	def has_ordered_quotation(self):
 		return frappe.db.sql("""
@@ -212,6 +238,8 @@ def make_quotation(source_name, target_doc=None):
 
 		quotation.run_method("set_missing_values")
 		quotation.run_method("calculate_taxes_and_totals")
+		if not source.with_items:
+			quotation.opportunity = source.name
 
 	doclist = get_mapped_doc("Opportunity", source_name, {
 		"Opportunity": {
@@ -232,6 +260,27 @@ def make_quotation(source_name, target_doc=None):
 			"add_if_empty": True
 		}
 	}, target_doc, set_missing_values)
+
+	return doclist
+
+@frappe.whitelist()
+def make_request_for_quotation(source_name, target_doc=None):
+	doclist = get_mapped_doc("Opportunity", source_name, {
+		"Opportunity": {
+			"doctype": "Request for Quotation",
+			"validation": {
+				"enquiry_type": ["=", "Sales"]
+			}
+		},
+		"Opportunity Item": {
+			"doctype": "Request for Quotation Item",
+			"field_map": [
+				["name", "opportunity_item"],
+				["parent", "opportunity"],
+				["uom", "uom"]
+			]
+		}
+	}, target_doc)
 
 	return doclist
 

@@ -7,7 +7,7 @@ frappe.ready(function() {
 
 	frappe.call({
 		type: "POST",
-		method: "erpnext.shopping_cart.product.get_product_info",
+		method: "erpnext.shopping_cart.product_info.get_product_info_for_website",
 		args: {
 			item_code: get_item_code()
 		},
@@ -73,7 +73,7 @@ frappe.ready(function() {
 			}
 		}
 
-		if (window.location.search.indexOf(item_code)!==-1) {
+		if (window.location.search == ("?variant=" + item_code) || window.location.search.includes(item_code)) {
 			return;
 		}
 

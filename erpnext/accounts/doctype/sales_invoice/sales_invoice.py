@@ -19,14 +19,16 @@ from erpnext.accounts.doctype.asset.depreciation \
 	import get_disposal_account_and_cost_center, get_gl_entries_on_asset_disposal
 from erpnext.stock.doctype.batch.batch import set_batch_nos
 from erpnext.stock.doctype.serial_no.serial_no import get_serial_nos, get_delivery_note_serial_no
+from erpnext.setup.doctype.company.company import update_company_current_month_sales
+from erpnext.accounts.general_ledger import get_round_off_account_and_cost_center
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
 }
 
 class SalesInvoice(SellingController):
-	def __init__(self, arg1, arg2=None):
-		super(SalesInvoice, self).__init__(arg1, arg2)
+	def __init__(self, *args, **kwargs):
+		super(SalesInvoice, self).__init__(*args, **kwargs)
 		self.status_updater = [{
 			'source_dt': 'Sales Invoice Item',
 			'target_field': 'billed_amt',
@@ -106,9 +108,9 @@ class SalesInvoice(SellingController):
 	def on_submit(self):
 		self.validate_pos_paid_amount()
 
-		if not self.recurring_id:
+		if not self.subscription:
 			frappe.get_doc('Authorization Control').validate_approving_authority(self.doctype,
-			 	self.company, self.base_grand_total, self)
+				self.company, self.base_grand_total, self)
 
 		self.check_prev_docstatus()
 
@@ -140,7 +142,7 @@ class SalesInvoice(SellingController):
 
 		self.update_time_sheet(self.name)
 
-		frappe.enqueue('erpnext.setup.doctype.company.company.update_company_current_month_sales', company=self.company)
+		self.update_current_month_sales()
 
 	def validate_pos_paid_amount(self):
 		if len(self.payments) == 0 and self.is_pos:
@@ -177,6 +179,15 @@ class SalesInvoice(SellingController):
 
 		self.make_gl_entries_on_cancel()
 		frappe.db.set(self, 'status', 'Cancelled')
+
+		self.update_current_month_sales()
+
+	def update_current_month_sales(self):
+		if frappe.flags.in_test:
+			update_company_current_month_sales(self.company)
+		else:
+			frappe.enqueue('erpnext.setup.doctype.company.company.update_company_current_month_sales',
+				company=self.company)
 
 	def update_status_updater_args(self):
 		if cint(self.update_stock):
@@ -293,6 +304,7 @@ class SalesInvoice(SellingController):
 			self.account_for_change_amount = frappe.db.get_value('Company', self.company, 'default_cash_account')
 
 		if pos:
+			self.pos_profile = pos.name
 			if not for_validate and not self.customer:
 				self.customer = pos.customer
 				self.mode_of_payment = pos.mode_of_payment
@@ -303,7 +315,7 @@ class SalesInvoice(SellingController):
 
 			for fieldname in ('territory', 'naming_series', 'currency', 'taxes_and_charges', 'letter_head', 'tc_name',
 				'selling_price_list', 'company', 'select_print_heading', 'cash_bank_account',
-				'write_off_account', 'write_off_cost_center'):
+				'write_off_account', 'write_off_cost_center', 'apply_discount_on'):
 					if (not for_validate) or (for_validate and not self.get(fieldname)):
 						self.set(fieldname, pos.get(fieldname))
 
@@ -615,6 +627,7 @@ class SalesInvoice(SellingController):
 		self.make_gle_for_change_amount(gl_entries)
 
 		self.make_write_off_gl_entry(gl_entries)
+		self.make_gle_for_rounding_adjustment(gl_entries)
 
 		return gl_entries
 
@@ -774,6 +787,21 @@ class SalesInvoice(SellingController):
 				}, write_off_account_currency)
 			)
 
+	def make_gle_for_rounding_adjustment(self, gl_entries):
+		if self.rounding_adjustment:
+			round_off_account, round_off_cost_center = \
+				get_round_off_account_and_cost_center(self.company)
+
+			gl_entries.append(
+				self.get_gl_dict({
+					"account": round_off_account,
+					"against": self.customer,
+					"credit_in_account_currency": self.rounding_adjustment,
+					"credit": self.base_rounding_adjustment,
+					"cost_center": round_off_cost_center,
+				}
+			))
+
 	def update_billing_status_in_dn(self, update_modified=True):
 		updated_delivery_notes = []
 		for d in self.get("items"):
@@ -789,7 +817,7 @@ class SalesInvoice(SellingController):
 		for dn in set(updated_delivery_notes):
 			frappe.get_doc("Delivery Note", dn).update_billing_percentage(update_modified=update_modified)
 
-	def on_recurring(self, reference_doc):
+	def on_recurring(self, reference_doc, subscription_doc):
 		for fieldname in ("c_form_applicable", "c_form_no", "write_off_amount"):
 			self.set(fieldname, reference_doc.get(fieldname))
 

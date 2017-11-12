@@ -9,6 +9,7 @@ from calendar import monthrange
 
 
 def execute(filters=None):
+<<<<<<< HEAD
     if not filters:
         filters = {}
 
@@ -48,6 +49,54 @@ def execute(filters=None):
 
     return columns, data
 
+=======
+	if not filters: filters = {}
+
+	conditions, filters = get_conditions(filters)
+	columns = get_columns(filters)
+	att_map = get_attendance_list(conditions, filters)
+	emp_map = get_employee_details()
+
+	holiday_list = [emp_map[d]["holiday_list"] for d in emp_map if emp_map[d]["holiday_list"]]
+	default_holiday_list = frappe.db.get_value("Company", filters.get("company"), "default_holiday_list")
+	holiday_list.append(default_holiday_list)
+	holiday_list = list(set(holiday_list))
+	holiday_map = get_holiday(holiday_list, filters["month"])
+
+	data = []
+	for emp in sorted(att_map):
+		emp_det = emp_map.get(emp)
+		if not emp_det:
+			continue
+
+		row = [emp, emp_det.employee_name, emp_det.branch, emp_det.department, emp_det.designation,
+			emp_det.company]
+
+		total_p = total_a = total_l = 0.0
+		for day in range(filters["total_days_in_month"]):
+			status = att_map.get(emp).get(day + 1, "None")
+			status_map = {"Present": "P", "Absent": "A", "Half Day": "HD", "On Leave": "L", "None": "", "Holiday":"<b>H</b>"}
+			if status == "None" and holiday_map:
+				emp_holiday_list = emp_det.holiday_list if emp_det.holiday_list else default_holiday_list
+				if emp_holiday_list in holiday_map and (day+1) in holiday_map[emp_holiday_list]:
+					status = "Holiday"
+			row.append(status_map[status])
+
+			if status == "Present":
+				total_p += 1
+			elif status == "Absent":
+				total_a += 1
+			elif status == "On Leave":
+				total_l += 1
+			elif status == "Half Day":
+				total_p += 0.5
+				total_a += 0.5
+
+		row += [total_p, total_l, total_a]
+		data.append(row)
+
+	return columns, data
+>>>>>>> upstream/master
 
 def get_columns(filters):
     columns = [
@@ -101,6 +150,7 @@ def get_conditions(filters):
 
 
 def get_employee_details():
+<<<<<<< HEAD
     emp_map = frappe._dict()
     for d in frappe.db.sql("""select name, employee_name, designation,
 		department, branch, company
@@ -108,7 +158,22 @@ def get_employee_details():
         emp_map.setdefault(d.name, d)
 
     return emp_map
+=======
+	emp_map = frappe._dict()
+	for d in frappe.db.sql("""select name, employee_name, designation, department, branch, company,
+		holiday_list from tabEmployee""", as_dict=1):
+		emp_map.setdefault(d.name, d)
+>>>>>>> upstream/master
 
+
+def get_holiday(holiday_list, month):
+	holiday_map = frappe._dict()
+	for d in holiday_list:
+		if d:
+			holiday_map.setdefault(d, frappe.db.sql_list('''select day(holiday_date) from `tabHoliday`
+				where parent=%s and month(holiday_date)=%s''', (d, month)))
+
+	return holiday_map
 
 @frappe.whitelist()
 def get_attendance_years():

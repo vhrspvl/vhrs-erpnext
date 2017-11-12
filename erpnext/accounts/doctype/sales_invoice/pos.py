@@ -88,10 +88,11 @@ def update_pos_profile_data(doc, pos_profile, company_data):
 	doc.naming_series = pos_profile.get('naming_series') or 'SINV-'
 	doc.letter_head = pos_profile.get('letter_head') or company_data.default_letter_head
 	doc.ignore_pricing_rule = pos_profile.get('ignore_pricing_rule') or 0
-	doc.apply_discount_on = pos_profile.get('apply_discount_on') if pos_profile.get('apply_discount') else ''
+	doc.apply_discount_on = pos_profile.get('apply_discount_on') or 'Grand Total'
 	doc.customer_group = pos_profile.get('customer_group') or get_root('Customer Group')
 	doc.territory = pos_profile.get('territory') or get_root('Territory')
 	doc.terms = frappe.db.get_value('Terms and Conditions', pos_profile.get('tc_name'), 'terms') or doc.terms or ''
+	doc.offline_pos_name = ''
 
 def get_root(table):
 	root = frappe.db.sql(""" select name from `tab%(table)s` having
@@ -151,13 +152,8 @@ def get_items_list(pos_profile):
 
 def get_item_groups(pos_profile):
 	item_group_dict = {}
-	if pos_profile.get('item_groups'):
-		item_groups = []
-		for d in pos_profile.get('item_groups'):
-			item_groups.extend(get_child_nodes('Item Group', d.item_group))
-	else:
-		item_groups = frappe.db.sql("""Select name,
-			lft, rgt from `tabItem Group` order by lft""", as_dict=1)
+	item_groups = frappe.db.sql("""Select name,
+		lft, rgt from `tabItem Group` order by lft""", as_dict=1)
 
 	for data in item_groups:
 		item_group_dict[data.name] = [data.lft, data.rgt]
@@ -325,8 +321,7 @@ def make_invoice(doc_list={}, email_queue_list={}, customers_list={}):
 				si_doc.set_posting_time = 1
 				si_doc.customer = get_customer_id(doc)
 				si_doc.due_date = doc.get('posting_date')
-				submit_invoice(si_doc, name, doc)
-				name_list.append(name)
+				name_list = submit_invoice(si_doc, name, doc, name_list)
 			else:
 				name_list.append(name)
 
@@ -423,6 +418,7 @@ def make_contact(args,customer):
 				'link_doctype': 'Customer',
 				'link_name': customer
 			})
+		doc.flags.ignore_mandatory = True
 		doc.save(ignore_permissions=True)
 
 def make_address(args, customer):
@@ -447,6 +443,7 @@ def make_address(args, customer):
 	address.is_primary_address = 1
 	address.is_shipping_address = 1
 	address.update(args)
+	address.flags.ignore_mandatory = True
 	address.save(ignore_permissions = True)
 
 def make_email_queue(email_queue):
@@ -480,19 +477,33 @@ def validate_item(doc):
 			frappe.db.commit()
 
 
-def submit_invoice(si_doc, name, doc):
+def submit_invoice(si_doc, name, doc, name_list):
 	try:
 		si_doc.insert()
 		si_doc.submit()
 		frappe.db.commit()
-	except Exception, e:
+		name_list.append(name)
+	except Exception as e:
 		if frappe.message_log: frappe.message_log.pop()
 		frappe.db.rollback()
-		save_invoice(e, si_doc, name)
+		frappe.log_error(frappe.get_traceback())
+		name_list = save_invoice(doc, name, name_list)
 
-def save_invoice(e, si_doc, name):
-	if not frappe.db.exists('Sales Invoice', {'offline_pos_name': name}):
-		si_doc.docstatus = 0
-		si_doc.flags.ignore_mandatory = True
-		si_doc.due_date = si_doc.posting_date
-		si_doc.insert()
+	return name_list
+
+def save_invoice(doc, name, name_list):
+	try:
+		if not frappe.db.exists('Sales Invoice', {'offline_pos_name': name}):
+			si = frappe.new_doc('Sales Invoice')
+			si.update(doc)
+			si.set_posting_time = 1
+			si.customer = get_customer_id(doc)
+			si.due_date = doc.get('posting_date')
+			si.flags.ignore_mandatory = True
+			si.insert(ignore_permissions=True)
+			frappe.db.commit()
+			name_list.append(name)
+	except Exception:
+		frappe.log_error(frappe.get_traceback())
+
+	return name_list

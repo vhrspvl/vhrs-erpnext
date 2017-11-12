@@ -21,8 +21,8 @@ form_grid_templates = {
 }
 
 class DeliveryNote(SellingController):
-	def __init__(self, arg1, arg2=None):
-		super(DeliveryNote, self).__init__(arg1, arg2)
+	def __init__(self, *args, **kwargs):
+		super(DeliveryNote, self).__init__(*args, **kwargs)
 		self.status_updater = [{
 			'source_dt': 'Delivery Note Item',
 			'target_dt': 'Sales Order Item',
@@ -92,9 +92,9 @@ class DeliveryNote(SellingController):
 	def so_required(self):
 		"""check in manage account if sales order required or not"""
 		if frappe.db.get_value("Selling Settings", None, 'so_required') == 'Yes':
-			 for d in self.get('items'):
-				 if not d.against_sales_order:
-					 frappe.throw(_("Sales Order required for Item {0}").format(d.item_code))
+			for d in self.get('items'):
+				if not d.against_sales_order:
+					frappe.throw(_("Sales Order required for Item {0}").format(d.item_code))
 
 	def validate(self):
 		self.validate_posting_time()

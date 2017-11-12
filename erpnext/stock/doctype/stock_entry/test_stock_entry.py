@@ -11,6 +11,7 @@ from erpnext.stock.doctype.purchase_receipt.test_purchase_receipt \
 from erpnext.stock.doctype.stock_ledger_entry.stock_ledger_entry import StockFreezeError
 from erpnext.stock.stock_ledger import get_previous_sle
 from erpnext.stock.doctype.stock_reconciliation.test_stock_reconciliation import create_stock_reconciliation
+from erpnext.stock.doctype.item.test_item import set_item_variant_settings, make_item_variant
 from frappe.tests.test_permissions import set_user_permission_doctypes
 from erpnext.stock.doctype.stock_entry.stock_entry_utils import make_stock_entry
 from erpnext.accounts.doctype.account.test_account import get_inventory_account
@@ -32,7 +33,7 @@ class TestStockEntry(unittest.TestCase):
 		set_perpetual_inventory(0)
 
 		for role in ("Stock User", "Sales User"):
-			set_user_permission_doctypes(doctype="Stock Entry", role=role,
+			set_user_permission_doctypes(doctypes="Stock Entry", role=role,
 				apply_user_permissions=0, user_permission_doctypes=None)
 
 	def test_fifo(self):
@@ -45,6 +46,7 @@ class TestStockEntry(unittest.TestCase):
 
 		make_stock_entry(item_code=item_code, target=warehouse, qty=1, basic_rate=10)
 		sle = get_sle(item_code = item_code, warehouse = warehouse)[0]
+
 		self.assertEqual([[1, 10]], frappe.safe_eval(sle.stock_queue))
 
 		# negative qty
@@ -73,12 +75,25 @@ class TestStockEntry(unittest.TestCase):
 		frappe.db.set_default("allow_negative_stock", 0)
 
 	def test_auto_material_request(self):
-		from erpnext.stock.doctype.item.test_item import make_item_variant
 		make_item_variant()
 		self._test_auto_material_request("_Test Item")
 		self._test_auto_material_request("_Test Item", material_request_type="Transfer")
 
 	def test_auto_material_request_for_variant(self):
+		fields = [{'field_name': 'reorder_levels'}]
+		set_item_variant_settings(fields)
+		make_item_variant()
+		template = frappe.get_doc("Item", "_Test Variant Item")
+
+		if not template.reorder_levels:
+			template.append('reorder_levels', {
+				"material_request_type": "Purchase",
+				"warehouse": "_Test Warehouse - _TC",
+				"warehouse_reorder_level": 20,
+				"warehouse_reorder_qty": 20
+			})
+
+		template.save()
 		self._test_auto_material_request("_Test Variant Item-S")
 
 	def test_auto_material_request_for_warehouse_group(self):
@@ -188,18 +203,18 @@ class TestStockEntry(unittest.TestCase):
 			[["_Test Item", "_Test Warehouse - _TC", -45.0], ["_Test Item", "_Test Warehouse 1 - _TC", 45.0]])
 
 		stock_in_hand_account = get_inventory_account(mtn.company, mtn.get("items")[0].s_warehouse)
-		
+
 		fixed_asset_account = get_inventory_account(mtn.company, mtn.get("items")[0].t_warehouse)
-			
+
 		if stock_in_hand_account == fixed_asset_account:
 			# no gl entry as both source and target warehouse has linked to same account.
 			self.assertFalse(frappe.db.sql("""select * from `tabGL Entry`
 				where voucher_type='Stock Entry' and voucher_no=%s""", mtn.name))
-			
+
 		else:
 			stock_value_diff = abs(frappe.db.get_value("Stock Ledger Entry", {"voucher_type": "Stock Entry",
 				"voucher_no": mtn.name, "warehouse": "_Test Warehouse - _TC"}, "stock_value_difference"))
-		
+
 			self.check_gl_entries("Stock Entry", mtn.name,
 				sorted([
 					[stock_in_hand_account, 0.0, stock_value_diff],
@@ -395,7 +410,8 @@ class TestStockEntry(unittest.TestCase):
 
 	def test_serial_item_error(self):
 		se, serial_nos = self.test_serial_by_series()
-		make_serialized_item("_Test Serialized Item", "ABCD\nEFGH")
+		if not frappe.db.exists('Serial No', 'ABCD'):
+			make_serialized_item("_Test Serialized Item", "ABCD\nEFGH")
 
 		se = frappe.copy_doc(test_records[0])
 		se.purpose = "Material Transfer"
@@ -467,7 +483,7 @@ class TestStockEntry(unittest.TestCase):
 	# permission tests
 	def test_warehouse_user(self):
 		for role in ("Stock User", "Sales User"):
-			set_user_permission_doctypes(doctype="Stock Entry", role=role,
+			set_user_permission_doctypes(doctypes="Stock Entry", role=role,
 				apply_user_permissions=1, user_permission_doctypes=["Warehouse"])
 
 		frappe.defaults.add_default("Warehouse", "_Test Warehouse 1 - _TC", "test@example.com", "User Permission")

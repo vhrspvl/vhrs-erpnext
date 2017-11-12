@@ -20,8 +20,8 @@ form_grid_templates = {
 }
 
 class PurchaseOrder(BuyingController):
-	def __init__(self, arg1, arg2=None):
-		super(PurchaseOrder, self).__init__(arg1, arg2)
+	def __init__(self, *args, **kwargs):
+		super(PurchaseOrder, self).__init__(*args, **kwargs)
 		self.status_updater = [{
 			'source_dt': 'Purchase Order Item',
 			'target_dt': 'Material Request Item',
@@ -39,6 +39,9 @@ class PurchaseOrder(BuyingController):
 		super(PurchaseOrder, self).validate()
 
 		self.set_status()
+
+		self.validate_supplier()
+		self.validate_schedule_date()
 		validate_for_items(self)
 		self.check_for_closed_status()
 
@@ -64,6 +67,17 @@ class PurchaseOrder(BuyingController):
 				"is_child_table": True
 			}
 		})
+
+	def validate_supplier(self):
+		prevent_po = frappe.db.get_value("Supplier", self.supplier, 'prevent_pos')
+		if prevent_po:
+			standing = frappe.db.get_value("Supplier Scorecard",self.supplier, 'status')
+			frappe.throw(_("Purchase Orders are not allowed for {0} due to a scorecard standing of {1}.").format(self.supplier, standing))
+
+		warn_po = frappe.db.get_value("Supplier", self.supplier, 'warn_pos')
+		if warn_po:
+			standing = frappe.db.get_value("Supplier Scorecard",self.supplier, 'status')
+			frappe.msgprint(_("{0} currently has a {1} Supplier Scorecard standing, and Purchase Orders to this supplier should be issued with caution.").format(self.supplier, standing), title=_("Caution"), indicator='orange')
 
 	def validate_minimum_order_qty(self):
 		items = list(set([d.item_code for d in self.get("items")]))
@@ -103,14 +117,13 @@ class PurchaseOrder(BuyingController):
 					d.discount_percentage = last_purchase_details['discount_percentage']
 					d.base_rate = last_purchase_details['base_rate'] * (flt(d.conversion_factor) or 1.0)
 					d.price_list_rate = d.base_price_list_rate / conversion_rate
-					d.rate = d.base_rate / conversion_rate
+					d.last_purchase_rate = d.base_rate / conversion_rate
 				else:
-					msgprint(_("Last purchase rate not found"))
 
 					item_last_purchase_rate = frappe.db.get_value("Item", d.item_code, "last_purchase_rate")
 					if item_last_purchase_rate:
 						d.base_price_list_rate = d.base_rate = d.price_list_rate \
-							= d.rate = item_last_purchase_rate
+							= d.last_purchase_rate = item_last_purchase_rate
 
 	# Check for Closed status
 	def check_for_closed_status(self):
@@ -282,6 +295,7 @@ def make_purchase_receipt(source_name, target_doc=None):
 			"field_map": {
 				"name": "purchase_order_item",
 				"parent": "purchase_order",
+				"bom": "bom"
 			},
 			"postprocess": update_item,
 			"condition": lambda doc: abs(doc.received_qty) < abs(doc.qty) and doc.delivered_by_supplier!=1

@@ -91,7 +91,7 @@ frappe.ui.form.on("Production Order", {
 		frm.set_indicator_formatter('operation',
 			function(doc) { return (frm.doc.qty==doc.completed_qty) ? "green" : "orange" });
 	},
-	
+
 	refresh: function(frm) {
 		erpnext.toggle_naming_series();
 		erpnext.production_order.set_custom_buttons(frm);
@@ -346,6 +346,7 @@ erpnext.production_order = {
 			var max = flt(frm.doc.qty) - flt(frm.doc.produced_qty);
 		}
 
+		max = flt(max, precision("qty"));
 		frappe.prompt({fieldtype:"Float", label: __("Qty for {0}", [purpose]), fieldname:"qty",
 			description: __("Max: {0}", [max]), 'default': max },
 			function(data) {

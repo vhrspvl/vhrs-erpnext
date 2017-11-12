@@ -18,6 +18,7 @@ def get_data():
 					"description": _("Project activity / task."),
 				},
 				{
+<<<<<<< HEAD
 
 					"type": "doctype",
 					"name": "Candidate",
@@ -30,6 +31,13 @@ def get_data():
 				},		
 				{
 
+=======
+					"type": "doctype",
+					"name": "Project Type",
+					"description": _("Define Project type."),
+				},
+				{
+>>>>>>> upstream/master
 					"type": "report",
 					"route": "List/Task/Gantt",
 					"doctype": "Task",

@@ -285,8 +285,9 @@ def get_pricing_rules(args):
 
 def filter_pricing_rules(args, pricing_rules):
 	# filter for qty
-	stock_qty = args.get('qty') * args.get('conversion_factor', 1)
 	if pricing_rules:
+		stock_qty = flt(args.get('qty')) * args.get('conversion_factor', 1)
+
 		pricing_rules = filter(lambda x: (flt(stock_qty)>=flt(x.min_qty)
 			and (flt(stock_qty)<=x.max_qty if x.max_qty else True)), pricing_rules)
 
@@ -347,6 +348,8 @@ def apply_internal_priority(pricing_rules, field_set, args):
 	return filtered_rules or pricing_rules
 
 def set_transaction_type(args):
+	if args.transaction_type:
+		return
 	if args.doctype in ("Opportunity", "Quotation", "Sales Order", "Delivery Note", "Sales Invoice"):
 		args.transaction_type = "selling"
 	elif args.doctype in ("Material Request", "Supplier Quotation", "Purchase Order",

@@ -14,6 +14,8 @@ from erpnext.controllers.stock_controller import StockController
 class SellingController(StockController):
 	def __setup__(self):
 		if hasattr(self, "taxes"):
+			self.flags.print_taxes_with_zero_amount = cint(frappe.db.get_single_value("Print Settings",
+				 "print_taxes_with_zero_amount"))
 			self.print_templates = {
 				"taxes": "templates/print_formats/includes/taxes.html"
 			}
@@ -47,7 +49,8 @@ class SellingController(StockController):
 		if getattr(self, "customer", None):
 			from erpnext.accounts.party import _get_party_details
 			party_details = _get_party_details(self.customer,
-				ignore_permissions=self.flags.ignore_permissions)
+				ignore_permissions=self.flags.ignore_permissions,
+				doctype=self.doctype, company=self.company)
 			if not self.meta.get_field("sales_team"):
 				party_details.pop("sales_team")
 
@@ -177,6 +180,9 @@ class SellingController(StockController):
 			return
 
 		for it in self.get("items"):
+			if not it.item_code:
+				continue
+
 			last_purchase_rate, is_stock_item = frappe.db.get_value("Item", it.item_code, ["last_purchase_rate", "is_stock_item"])
 			last_purchase_rate_in_sales_uom = last_purchase_rate / (it.conversion_factor or 1)
 			if flt(it.base_rate) < flt(last_purchase_rate_in_sales_uom):

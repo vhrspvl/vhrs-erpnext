@@ -70,8 +70,8 @@ def get_data():
 			"items": [
 				{
 					"type": "doctype",
-					"name": "BOM Replace Tool",
-					"description": _("Replace Item / BOM in all BOMs"),
+					"name": "BOM Update Tool",
+					"description": _("Replace BOM and update latest price in all BOMs"),
 				},
 			]
 		},
@@ -122,6 +122,12 @@ def get_data():
 					"type": "report",
 					"is_query_report": True,
 					"name": "BOM Search",
+					"doctype": "BOM"
+				},
+				{
+					"type": "report",
+					"is_query_report": True,
+					"name": "BOM Stock Report",
 					"doctype": "BOM"
 				}
 			]

@@ -17,6 +17,7 @@ from erpnext.controllers.item_variant import (get_variant, copy_attributes_to_va
 	make_variant_item_code, validate_item_variant_attributes, ItemVariantExistsError)
 
 class DuplicateReorderRows(frappe.ValidationError): pass
+class StockExistsForTemplate(frappe.ValidationError): pass
 
 class Item(WebsiteGenerator):
 	website = frappe._dict(
@@ -28,10 +29,14 @@ class Item(WebsiteGenerator):
 
 	def onload(self):
 		super(Item, self).onload()
+
 		self.set_onload('sle_exists', self.check_if_sle_exists())
 		if self.is_fixed_asset:
 			asset = frappe.db.get_all("Asset", filters={"item_code": self.name, "docstatus": 1}, limit=1)
 			self.set_onload("asset_exists", True if asset else False)
+
+		if frappe.db.get_value('Stock Ledger Entry', {'item_code': self.name}):
+			self.set_onload('stock_exists', True)
 
 	def autoname(self):
 		if frappe.db.get_default("item_naming_by")=="Naming Series":
@@ -52,7 +57,8 @@ class Item(WebsiteGenerator):
 		if not self.description:
 			self.description = self.item_name
 
-		self.publish_in_hub = 1
+		if self.is_sales_item and not self.get('is_item_from_hub'):
+			self.publish_in_hub = 1
 
 	def after_insert(self):
 		'''set opening stock and item price'''
@@ -63,6 +69,10 @@ class Item(WebsiteGenerator):
 			self.set_opening_stock()
 
 	def validate(self):
+		self.before_update = None
+		if frappe.db.exists('Item', self.name):
+			self.before_update = frappe.get_doc('Item', self.name)
+
 		super(Item, self).validate()
 
 		if not self.item_name:
@@ -81,10 +91,11 @@ class Item(WebsiteGenerator):
 		self.validate_barcode()
 		self.cant_change()
 		self.validate_warehouse_for_reorder()
-		self.update_item_desc()
+		self.update_bom_item_desc()
 		self.synced_with_hub = 0
 
 		self.validate_has_variants()
+		self.validate_stock_exists_for_template_item()
 		self.validate_attributes()
 		self.validate_variant_attributes()
 		self.validate_website_image()
@@ -100,6 +111,7 @@ class Item(WebsiteGenerator):
 	def on_update(self):
 		invalidate_cache_for_item(self)
 		self.validate_name_with_item_group()
+		self.update_variants()
 		self.update_item_price()
 		self.update_template_item()
 
@@ -132,7 +144,8 @@ class Item(WebsiteGenerator):
 		from erpnext.stock.doctype.stock_entry.stock_entry_utils import make_stock_entry
 
 		# default warehouse, or Stores
-		default_warehouse = (frappe.db.get_single_value('Stock Settings', 'default_warehouse')
+		default_warehouse = (self.default_warehouse
+			or frappe.db.get_single_value('Stock Settings', 'default_warehouse')
 			or frappe.db.get_value('Warehouse', {'warehouse_name': _('Stores')}))
 
 		if default_warehouse:
@@ -487,6 +500,8 @@ class Item(WebsiteGenerator):
 	def validate_warehouse_for_reorder(self):
 		warehouse = []
 		for i in self.get("reorder_levels"):
+			if not i.warehouse_group:
+				i.warehouse_group = i.warehouse
 			if i.get("warehouse") and i.get("warehouse") not in warehouse:
 				warehouse += [i.get("warehouse")]
 			else:
@@ -584,13 +599,27 @@ class Item(WebsiteGenerator):
 					row.label = label
 					row.description = desc
 
-	def update_item_desc(self):
-		if frappe.db.get_value('BOM',self.name, 'description') != self.description:
-			frappe.db.sql("""update `tabBOM` set description = %s where item = %s and docstatus < 2""",(self.description, self.name))
-			frappe.db.sql("""update `tabBOM Item` set description = %s where
-				item_code = %s and docstatus < 2""",(self.description, self.name))
-			frappe.db.sql("""update `tabBOM Explosion Item` set description = %s where
-				item_code = %s and docstatus < 2""",(self.description, self.name))
+	def update_bom_item_desc(self):
+		if self.is_new(): return
+
+		if self.db_get('description') != self.description:
+			frappe.db.sql("""
+				update `tabBOM`
+				set description = %s
+				where item = %s and docstatus < 2
+			""", (self.description, self.name))
+
+			frappe.db.sql("""
+				update `tabBOM Item`
+				set description = %s
+				where item_code = %s and docstatus < 2
+			""", (self.description, self.name))
+
+			frappe.db.sql("""
+				update `tabBOM Explosion Item`
+				set description = %s
+				where item_code = %s and docstatus < 2
+			""", (self.description, self.name))
 
 	def update_template_item(self):
 		"""Set Show in Website for Template Item if True for its Variant"""
@@ -604,13 +633,35 @@ class Item(WebsiteGenerator):
 
 			if not template_item.show_in_website:
 				template_item.show_in_website = 1
+				template_item.flags.dont_update_variants = True
 				template_item.flags.ignore_permissions = True
 				template_item.save()
+
+	def update_variants(self):
+			if self.flags.dont_update_variants or \
+				frappe.db.get_single_value('Item Variant Settings', 'do_not_update_variants'):
+				return
+			if self.has_variants:
+				updated = []
+				variants = frappe.db.get_all("Item", fields=["item_code"], filters={"variant_of": self.name })
+				for d in variants:
+					variant = frappe.get_doc("Item", d)
+					copy_attributes_to_variant(self, variant)
+					variant.save()
+					updated.append(d.item_code)
+				if updated:
+					frappe.msgprint(_("Item Variants {0} updated").format(", ".join(updated)))
 
 	def validate_has_variants(self):
 		if not self.has_variants and frappe.db.get_value("Item", self.name, "has_variants"):
 			if frappe.db.exists("Item", {"variant_of": self.name}):
 				frappe.throw(_("Item has variants."))
+
+	def validate_stock_exists_for_template_item(self):
+		if self.has_variants and \
+			frappe.db.get_value('Stock Ledger Entry', {'item_code': self.name}):
+			frappe.throw(_("As stock exists against an item {0}, you can not enable has variants property")
+				.format(self.name), StockExistsForTemplate)
 
 	def validate_uom(self):
 		if not self.get("__islocal"):
@@ -696,7 +747,7 @@ def _msgprint(msg, verbose):
 	if verbose:
 		msgprint(msg, raise_exception=True)
 	else:
-		raise frappe.ValidationError, msg
+		raise frappe.ValidationError(msg)
 
 
 def get_last_purchase_details(item_code, doc_name=None, conversion_rate=1.0):
@@ -796,4 +847,3 @@ def check_stock_uom_with_bin(item, stock_uom):
 
 	if not matched:
 		frappe.throw(_("Default Unit of Measure for Item {0} cannot be changed directly because you have already made some transaction(s) with another UOM. You will need to create a new Item to use a different Default UOM.").format(item))
-

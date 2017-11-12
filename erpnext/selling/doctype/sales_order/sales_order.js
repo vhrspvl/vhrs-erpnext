@@ -92,7 +92,7 @@ erpnext.selling.SalesOrderController = erpnext.selling.SellingController.extend(
 				// delivery note
 				if(flt(doc.per_delivered, 2) < 100 && ["Sales", "Shopping Cart"].indexOf(doc.order_type)!==-1 && allow_delivery) {
 					this.frm.add_custom_button(__('Delivery'),
-						function() { me.make_delivery_note_based_on_delivery_note(); }, __("Make"));
+						function() { me.make_delivery_note_based_on_delivery_date(); }, __("Make"));
 					this.frm.add_custom_button(__('Production Order'),
 						function() { me.make_production_order() }, __("Make"));
 
@@ -141,6 +141,12 @@ erpnext.selling.SalesOrderController = erpnext.selling.SellingController.extend(
 							function() { me.make_project() }, __("Make"));
 				}
 
+				if(!doc.subscription) {
+					this.frm.add_custom_button(__('Subscription'), function() {
+						erpnext.utils.make_subscription(doc.doctype, doc.name)
+					}, __("Make"))
+				}
+
 			} else {
 				if (this.frm.has_perm("submit")) {
 					// un-close
@@ -179,7 +185,7 @@ erpnext.selling.SalesOrderController = erpnext.selling.SellingController.extend(
 			doc: this.frm.doc,
 			method: 'get_production_order_items',
 			callback: function(r) {
-				if(!r.message.every(function(d) { return !!d.bom })) {
+				if(!r.message) {
 					frappe.msgprint({
 						title: __('Production Order not created'),
 						message: __('No Items with Bill of Materials to Manufacture'),
@@ -264,7 +270,7 @@ erpnext.selling.SalesOrderController = erpnext.selling.SellingController.extend(
 		})
 	},
 
-	make_delivery_note_based_on_delivery_note: function() {
+	make_delivery_note_based_on_delivery_date: function() {
 		var me = this;
 		
 		var delivery_dates = [];

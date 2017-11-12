@@ -33,6 +33,12 @@ def get_data():
 					"description": _("Point of Sale")
 				},
 				{
+					"type": "doctype",
+					"name": "Subscription",
+					"label": _("Subscription"),
+					"description": _("To make recurring documents")
+				},
+				{
 					"type": "report",
 					"name": "Accounts Receivable",
 					"doctype": "Sales Invoice",
@@ -311,9 +317,14 @@ def get_data():
 				},
 				{
 					"type": "doctype",
+					"name": "POS Settings",
+					"description": _("Setup mode of POS (Online / Offline)")
+				},
+				{
+					"type": "doctype",
 					"name": "POS Profile",
 					"label": _("Point-of-Sale Profile"),
-					"description": _("Rules to calculate shipping amount for a sale")
+					"description": _("Setup default values for POS Invoices")
 				},
 				{
 					"type": "doctype",

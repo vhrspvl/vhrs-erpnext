@@ -9,6 +9,18 @@ frappe.ui.form.on('Quotation', {
 		frm.custom_make_buttons = {
 			'Sales Order': 'Make Sales Order'
 		}
+	},
+
+	refresh: function(frm) {
+		frm.trigger("set_label");
+	},
+
+	quotation_to: function(frm) {
+		frm.trigger("set_label");
+	},
+
+	set_label: function(frm) {
+		frm.fields_dict.customer_address.set_label(__(frm.doc.quotation_to + " Address"));
 	}
 });
 
@@ -24,17 +36,33 @@ erpnext.selling.QuotationController = erpnext.selling.SellingController.extend({
 	},
 	refresh: function(doc, dt, dn) {
 		this._super(doc, dt, dn);
+		doctype = doc.quotation_to == 'Customer' ? 'Customer':'Lead';
+		frappe.dynamic_link = {doc: this.frm.doc, fieldname: doctype.toLowerCase(), doctype: doctype}
 
 		var me = this;
 
+		if (doc.__islocal) {
+			this.frm.set_value('valid_till', frappe.datetime.add_months(doc.transaction_date, 1))
+		}
+
 		if(doc.docstatus == 1 && doc.status!=='Lost') {
-			cur_frm.add_custom_button(__('Make Sales Order'),
-				cur_frm.cscript['Make Sales Order']);
+			if(!doc.valid_till || frappe.datetime.get_diff(doc.valid_till, frappe.datetime.get_today()) > 0) {
+				cur_frm.add_custom_button(__('Sales Order'),
+					cur_frm.cscript['Make Sales Order'], __("Make"));
+			}
 
 			if(doc.status!=="Ordered") {
 				cur_frm.add_custom_button(__('Set as Lost'),
 					cur_frm.cscript['Declare Order Lost']);
 			}
+
+			if(!doc.subscription) {
+				cur_frm.add_custom_button(__('Subscription'), function() {
+					erpnext.utils.make_subscription(doc.doctype, doc.name)
+				}, __("Make"))
+			}
+
+			cur_frm.page.set_inner_btn_group_as_primary(__("Make"));
 		}
 
 		if (this.frm.doc.docstatus===0) {
@@ -144,7 +172,7 @@ cur_frm.cscript['Make Sales Order'] = function() {
 
 cur_frm.cscript['Declare Order Lost'] = function(){
 	var dialog = new frappe.ui.Dialog({
-		title: "Set as Lost",
+		title: __('Set as Lost'),
 		fields: [
 			{"fieldtype": "Text", "label": __("Reason for losing"), "fieldname": "reason",
 				"reqd": 1 },

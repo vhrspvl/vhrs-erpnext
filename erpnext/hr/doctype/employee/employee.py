@@ -286,6 +286,7 @@ def deactivate_sales_person(status=None, employee=None):
 
 
 @frappe.whitelist()
+<<<<<<< HEAD
 def create_user(employee, user=None):
     emp = frappe.get_doc("Employee", employee)
 
@@ -315,3 +316,46 @@ def create_user(employee, user=None):
     })
     user.insert()
     return user.name
+=======
+def create_user(employee, user = None):
+	emp = frappe.get_doc("Employee", employee)
+
+	employee_name = emp.employee_name.split(" ")
+	middle_name = last_name = ""
+
+	if len(employee_name) >= 3:
+		last_name = " ".join(employee_name[2:])
+		middle_name = employee_name[1]
+	elif len(employee_name) == 2:
+		last_name = employee_name[1]
+
+	first_name = employee_name[0]
+
+	user = frappe.new_doc("User")
+	user.update({
+		"name": emp.employee_name,
+		"email": emp.prefered_email,
+		"enabled": 1,
+		"first_name": first_name,
+		"middle_name": middle_name,
+		"last_name": last_name,
+		"gender": emp.gender,
+		"birth_date": emp.date_of_birth,
+		"phone": emp.cell_number,
+		"bio": emp.bio
+	})
+	user.insert()
+	return user.name
+
+def get_employee_emails(employee_list):
+	'''Returns list of employee emails either based on user_id or company_email'''
+	employee_emails = []
+	for employee in employee_list:
+		if not employee:
+			continue
+		user, email = frappe.db.get_value('Employee', employee, ['user_id', 'company_email'])
+		if user or email:
+			employee_emails.append(user or email)
+
+	return employee_emails
+>>>>>>> upstream/master

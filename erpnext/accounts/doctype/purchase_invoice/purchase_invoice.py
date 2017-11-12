@@ -15,14 +15,15 @@ from erpnext.stock import get_warehouse_account_map
 from erpnext.accounts.general_ledger import make_gl_entries, merge_similar_entries, delete_gl_entries
 from erpnext.accounts.doctype.gl_entry.gl_entry import update_outstanding_amt
 from erpnext.buying.utils import check_for_closed_status
+from erpnext.accounts.general_ledger import get_round_off_account_and_cost_center
 
 form_grid_templates = {
 	"items": "templates/form_grid/item_grid.html"
 }
 
 class PurchaseInvoice(BuyingController):
-	def __init__(self, arg1, arg2=None):
-		super(PurchaseInvoice, self).__init__(arg1, arg2)
+	def __init__(self, *args, **kwargs):
+		super(PurchaseInvoice, self).__init__(*args, **kwargs)
 		self.status_updater = [{
 			'source_dt': 'Purchase Invoice Item',
 			'target_dt': 'Purchase Order Item',
@@ -52,6 +53,9 @@ class PurchaseInvoice(BuyingController):
 		# validate cash purchase
 		if (self.is_paid == 1):
 			self.validate_cash()
+
+		if self._action=="submit" and self.update_stock:
+			self.make_batches('warehouse')
 
 		self.check_conversion_rate()
 		self.validate_credit_to_acc()
@@ -350,6 +354,7 @@ class PurchaseInvoice(BuyingController):
 
 		self.make_payment_gl_entries(gl_entries)
 		self.make_write_off_gl_entry(gl_entries)
+		self.make_gle_for_rounding_adjustment(gl_entries)
 
 		return gl_entries
 
@@ -510,7 +515,7 @@ class PurchaseInvoice(BuyingController):
 
 				i += 1
 
-		if self.update_stock and valuation_tax:
+		if self.auto_accounting_for_stock and self.update_stock and valuation_tax:
 			for cost_center, amount in valuation_tax.items():
 				gl_entries.append(
 					self.get_gl_dict({
@@ -580,6 +585,21 @@ class PurchaseInvoice(BuyingController):
 					"cost_center": self.write_off_cost_center
 				})
 			)
+
+	def make_gle_for_rounding_adjustment(self, gl_entries):
+		if self.rounding_adjustment:
+			round_off_account, round_off_cost_center = \
+				get_round_off_account_and_cost_center(self.company)
+
+			gl_entries.append(
+				self.get_gl_dict({
+					"account": round_off_account,
+					"against": self.supplier,
+					"debit_in_account_currency": self.rounding_adjustment,
+					"debit": self.base_rounding_adjustment,
+					"cost_center": round_off_cost_center,
+				}
+			))
 
 	def on_cancel(self):
 		self.check_for_closed_status()
@@ -664,7 +684,7 @@ class PurchaseInvoice(BuyingController):
 				if account_type != 'Fixed Asset':
 					frappe.throw(_("Row {0}# Account must be of type 'Fixed Asset'").format(d.idx))
 
-	def on_recurring(self, reference_doc):
+	def on_recurring(self, reference_doc, subscription_doc):
 		self.due_date = None
 
 @frappe.whitelist()

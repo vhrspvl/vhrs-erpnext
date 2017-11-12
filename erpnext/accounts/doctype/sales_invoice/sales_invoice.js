@@ -86,7 +86,11 @@ erpnext.accounts.SalesInvoiceController = erpnext.selling.SellingController.exte
 					this.make_payment_request, __("Make"));
 			}
 
-
+			if(!doc.subscription) {
+				cur_frm.add_custom_button(__('Subscription'), function() {
+					erpnext.utils.make_subscription(doc.doctype, doc.name)
+				}, __("Make"))
+			}
 		}
 
 		// Show buttons only when pos view is active
@@ -339,23 +343,6 @@ erpnext.accounts.SalesInvoiceController = erpnext.selling.SellingController.exte
 		}
 
 		this.frm.refresh_fields();
-	},
-
-	company_address: function() {
-		var me = this;
-		if(this.frm.doc.company_address) {
-			frappe.call({
-				method: "frappe.contacts.doctype.address.address.get_address_display",
-				args: {"address_dict": this.frm.doc.company_address },
-				callback: function(r) {
-					if(r.message) {
-						me.frm.set_value("company_address_display", r.message)
-					}
-				}
-			})
-		} else {
-			this.frm.set_value("company_address_display", "");
-		}
 	}
 });
 
@@ -366,7 +353,7 @@ $.extend(cur_frm.cscript, new erpnext.accounts.SalesInvoiceController({frm: cur_
 // ------------
 cur_frm.cscript.hide_fields = function(doc) {
 	var parent_fields = ['project', 'due_date', 'is_opening', 'source', 'total_advance', 'get_advances',
-		'advances', 'sales_partner', 'commission_rate', 'total_commission', 'advances', 'from_date', 'to_date'];
+		'advances', 'advances', 'from_date', 'to_date'];
 
 	if(cint(doc.is_pos) == 1) {
 		hide_field(parent_fields);
@@ -546,6 +533,24 @@ frappe.ui.form.on('Sales Invoice', {
 				}
 			};
 		});
+	},
+	//When multiple companies are set up. in case company name is changed set default company address
+	company:function(frm){
+		if (frm.doc.company)
+		{
+			frappe.call({
+				method:"frappe.contacts.doctype.address.address.get_default_address",
+				args:{ doctype:'Company',name:frm.doc.company},
+				callback: function(r){
+					if (r.message){
+						frm.set_value("company_address",r.message)
+					}
+					else {
+						frm.set_value("company_address","")
+					}
+				}
+			})
+		}
 	},
 
 	project: function(frm){
