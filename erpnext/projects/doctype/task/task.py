@@ -16,7 +16,6 @@ class CircularReferenceError(frappe.ValidationError):
 
 
 class Task(Document):
-<<<<<<< HEAD
         # Custom for candidates -->
 
     def onload(self):
@@ -235,7 +234,6 @@ class Task(Document):
             if project_user:
                 return True
 
-=======
 	def get_feed(self):
 		return '{0}: {1}'.format(_(self.status), self.subject)
 
@@ -351,7 +349,6 @@ class Task(Document):
 		project_user = frappe.db.get_value("Project User", {"parent": doc.project, "user":frappe.session.user} , "user")
 		if project_user:
 			return True
->>>>>>> upstream/master
 
 @frappe.whitelist()
 def get_events(start, end, filters=None):
@@ -385,13 +382,8 @@ def get_project(doctype, txt, searchfield, start, page_len, filters):
 				%(mcond)s
 			order by name
 			limit %(start)s, %(page_len)s """ % {'key': searchfield,
-<<<<<<< HEAD
-                                        'txt': "%%%s%%" % frappe.db.escape(txt), 'mcond': get_match_cond(doctype),
-                                        'start': start, 'page_len': page_len})
-=======
 			'txt': "%%%s%%" % frappe.db.escape(txt), 'mcond':get_match_cond(doctype),
 			'start': start, 'page_len': page_len})
->>>>>>> upstream/master
 
 
 @frappe.whitelist()
@@ -407,10 +399,4 @@ def set_tasks_as_overdue():
     frappe.db.sql("""update tabTask set `status`='Overdue'
 		where exp_end_date is not null
 		and exp_end_date < CURDATE()
-<<<<<<< HEAD
 		and `status` not in ('Closed', 'Cancelled', 'Hold','Pending Review','PSL','DnD')""")
-=======
-		and `status` not in ('Closed', 'Cancelled')""")
-
-
->>>>>>> upstream/master
