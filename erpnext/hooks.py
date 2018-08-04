@@ -175,9 +175,6 @@ standard_queries = {
 }
 
 doc_events = {
-	"Attendance": {
-	"before_save": "cvhrsian.cvhrsian.doctype.candidate.candidate.validate_attendance_status"
-	},
 	"Stock Entry": {
 		"on_submit": "erpnext.stock.doctype.material_request.material_request.update_completed_and_requested_qty",
 		"on_cancel": "erpnext.stock.doctype.material_request.material_request.update_completed_and_requested_qty"

@@ -107,8 +107,8 @@ class Task(Document):
             candidate_names.append(candidate.name)
 
         # delete
-        # for c in frappe.get_all("Candidate", ["name"], {"task": self.name, "name": ("not in", candidate_names)}):
-            #frappe.delete_doc("Candidate", c.name)
+        for c in frappe.get_all("Candidate", ["name"], {"task": self.name, "name": ("not in", candidate_names)}):
+            frappe.delete_doc("Candidate", c.name)
 
     #<---
 #-->
@@ -286,6 +286,8 @@ class Task(Document):
 		self.reschedule_dependent_tasks()
 		self.update_project()
 		self.unassign_todo()
+        self.load_candidates()
+        self.sync_candidates()
 
 	def unassign_todo(self):
 		if self.status == "Closed" or self.status == "Cancelled":
@@ -399,4 +401,4 @@ def set_tasks_as_overdue():
     frappe.db.sql("""update tabTask set `status`='Overdue'
 		where exp_end_date is not null
 		and exp_end_date < CURDATE()
-		and `status` not in ('Closed', 'Cancelled', 'Hold','Pending Review','PSL','DnD')""")
+		and `status` not in ('Closed', 'Cancelled', 'Hold','Pending Review','Closed')""")

@@ -1,23 +1,24 @@
 {
  "add_total_row": 0, 
  "apply_user_permissions": 1, 
- "creation": "2013-05-13 14:04:03", 
+ "creation": "2018-05-21 19:23:17.725284", 
  "disabled": 0, 
  "docstatus": 0, 
  "doctype": "Report", 
- "idx": 3, 
+ "idx": 0, 
  "is_standard": "Yes", 
- "modified": "2017-12-05 10:21:58.194308", 
+ "letter_head": "VHRS", 
+ "modified": "2018-05-21 19:23:17.725284", 
  "modified_by": "Administrator", 
  "module": "HR", 
- "name": "Monthly Attendance Sheet", 
+ "name": "Employee Work Anniversary", 
  "owner": "Administrator", 
- "ref_doctype": "Attendance", 
- "report_name": "Monthly Attendance Sheet", 
+ "ref_doctype": "Employee", 
+ "report_name": "Employee Work Anniversary", 
  "report_type": "Script Report", 
  "roles": [
   {
-   "role": "System Manager"
+   "role": "Employee"
   }, 
   {
    "role": "HR User"

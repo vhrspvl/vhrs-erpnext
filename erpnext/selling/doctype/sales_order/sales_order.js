@@ -4,290 +4,306 @@
 {% include 'erpnext/selling/sales_common.js' %}
 
 frappe.ui.form.on("Sales Order", {
-	setup: function(frm) {
-		frm.custom_make_buttons = {
-			'Delivery Note': 'Delivery',
-			'Sales Invoice': 'Invoice',
-			'Material Request': 'Material Request',
-			'Purchase Order': 'Purchase Order',
-			'Project': 'Project'
-		}
-		frm.add_fetch('customer', 'tax_id', 'tax_id');
-	},
-	onload: function(frm) {
-		erpnext.queries.setup_queries(frm, "Warehouse", function() {
-			return erpnext.queries.warehouse(frm.doc);
-		});
+    setup: function(frm) {
+        frm.custom_make_buttons = {
+            'Delivery Note': 'Delivery',
+            'Sales Invoice': 'Invoice',
+            'Material Request': 'Material Request',
+            'Purchase Order': 'Purchase Order',
+            'Project': 'Project'
+        }
+        frm.add_fetch('customer', 'tax_id', 'tax_id');
+    },
+    onload: function(frm) {
+        erpnext.queries.setup_queries(frm, "Warehouse", function() {
+            return erpnext.queries.warehouse(frm.doc);
+        });
 
-		frm.set_query('project', function(doc, cdt, cdn) {
-			return {
-				query: "erpnext.controllers.queries.get_project_name",
-				filters: {
-					'customer': doc.customer
-				}
-			}
-		});
+        frm.set_query('project', function(doc, cdt, cdn) {
+            return {
+                query: "erpnext.controllers.queries.get_project_name",
+                filters: {
+                    'customer': doc.customer
+                }
+            }
+        });
 
-		// formatter for material request item
-		frm.set_indicator_formatter('item_code',
-			function(doc) { return (doc.stock_qty<=doc.delivered_qty) ? "green" : "orange" })
+        // formatter for material request item
+        frm.set_indicator_formatter('item_code',
+            function(doc) { return (doc.stock_qty <= doc.delivered_qty) ? "green" : "orange" })
 
-		erpnext.queries.setup_warehouse_query(frm);
-	},
-	
-	delivery_date: function(frm) {
-		$.each(frm.doc.items || [], function(i, d) {
-			if(!d.delivery_date) d.delivery_date = frm.doc.delivery_date;
-		});
-		refresh_field("items");
-	}
+        erpnext.queries.setup_warehouse_query(frm);
+    },
+
+    delivery_date: function(frm) {
+        $.each(frm.doc.items || [], function(i, d) {
+            if (!d.delivery_date) d.delivery_date = frm.doc.delivery_date;
+        });
+        refresh_field("items");
+    },
+
+    onload_post_render: function(frm) {
+        frm.get_field("items").grid.set_multiple_add("item_code", "qty");
+    }
 });
 
 frappe.ui.form.on("Sales Order Item", {
-	delivery_date: function(frm, cdt, cdn) {
-		if(!frm.doc.delivery_date) {
-			erpnext.utils.copy_value_in_all_row(frm.doc, cdt, cdn, "items", "delivery_date");
-		}
-	}	
+    delivery_date: function(frm, cdt, cdn) {
+        if (!frm.doc.delivery_date) {
+            erpnext.utils.copy_value_in_all_row(frm.doc, cdt, cdn, "items", "delivery_date");
+        }
+    }
 });
 
 erpnext.selling.SalesOrderController = erpnext.selling.SellingController.extend({
-	refresh: function(doc, dt, dn) {
-		var me = this;
-		this._super();
-		var allow_purchase = false;
-		var allow_delivery = false;
+            refresh: function(doc, dt, dn) {
+                var me = this;
+                this._super();
+                var allow_purchase = false;
+                var allow_delivery = false;
 
-		if(doc.docstatus==1) {
-			if(doc.status != 'Closed') {
+                if (doc.docstatus == 1) {
+                    if (doc.status != 'Closed') {
 
-				for (var i in this.frm.doc.items) {
-					var item = this.frm.doc.items[i];
-					if(item.delivered_by_supplier === 1 || item.supplier){
-						if(item.qty > flt(item.ordered_qty)
-							&& item.qty > flt(item.delivered_qty)) {
-							allow_purchase = true;
-						}
-					}
+                        for (var i in this.frm.doc.items) {
+                            var item = this.frm.doc.items[i];
+                            if (item.delivered_by_supplier === 1 || item.supplier) {
+                                if (item.qty > flt(item.ordered_qty) &&
+                                    item.qty > flt(item.delivered_qty)) {
+                                    allow_purchase = true;
+                                }
+                            }
 
-					if (item.delivered_by_supplier===0) {
-						if(item.qty > flt(item.delivered_qty)) {
-							allow_delivery = true;
-						}
-					}
+                            if (item.delivered_by_supplier === 0) {
+                                if (item.qty > flt(item.delivered_qty)) {
+                                    allow_delivery = true;
+                                }
+                            }
 
-					if (allow_delivery && allow_purchase) {
-						break;
-					}
-				}
+                            if (allow_delivery && allow_purchase) {
+                                break;
+                            }
+                        }
 
-				if (this.frm.has_perm("submit")) {
-					// close
-					if(flt(doc.per_delivered, 2) < 100 || flt(doc.per_billed) < 100) {
-						this.frm.add_custom_button(__('Close'),
-							function() { me.close_sales_order() }, __("Status"))
-					}
-				}
+                        if (this.frm.has_perm("submit")) {
+                            // close
+                            if (flt(doc.per_delivered, 2) < 100 || flt(doc.per_billed) < 100) {
+                                this.frm.add_custom_button(__('Close'),
+                                    function() { me.close_sales_order() }, __("Status"))
+                            }
+                        }
 
-				// delivery note
-				if(flt(doc.per_delivered, 2) < 100 && ["Sales", "Shopping Cart"].indexOf(doc.order_type)!==-1 && allow_delivery) {
-					this.frm.add_custom_button(__('Delivery'),
-						function() { me.make_delivery_note_based_on_delivery_date(); }, __("Make"));
-					this.frm.add_custom_button(__('Production Order'),
-						function() { me.make_production_order() }, __("Make"));
+                        // delivery note
+                        if (flt(doc.per_delivered, 2) < 100 && ["Sales", "Shopping Cart"].indexOf(doc.order_type) !== -1 && allow_delivery) {
+                            this.frm.add_custom_button(__('Delivery'),
+                                function() { me.make_delivery_note_based_on_delivery_date(); }, __("Make"));
+                            this.frm.add_custom_button(__('Production Order'),
+                                function() { me.make_production_order() }, __("Make"));
 
-					this.frm.page.set_inner_btn_group_as_primary(__("Make"));
-				}
+                            this.frm.page.set_inner_btn_group_as_primary(__("Make"));
+                        }
 
-				// sales invoice
-				if(flt(doc.per_billed, 2) < 100) {
-					this.frm.add_custom_button(__('Invoice'),
-						function() { me.make_sales_invoice() }, __("Make"));
-				}
+                        // sales invoice
+                        if (flt(doc.per_billed, 2) < 100) {
+                            this.frm.add_custom_button(__('Invoice'),
+                                function() { me.make_sales_invoice() }, __("Make"));
+                        }
 
-				// material request
-				if(!doc.order_type || ["Sales", "Shopping Cart"].indexOf(doc.order_type)!==-1
-					&& flt(doc.per_delivered, 2) < 100) {
-					this.frm.add_custom_button(__('Material Request'),
-						function() { me.make_material_request() }, __("Make"));
-				}
+                        // material request
+                        if (!doc.order_type || ["Sales", "Shopping Cart"].indexOf(doc.order_type) !== -1 &&
+                            flt(doc.per_delivered, 2) < 100) {
+                            this.frm.add_custom_button(__('Material Request'),
+                                function() { me.make_material_request() }, __("Make"));
+                        }
 
-				// make purchase order
-				if(flt(doc.per_delivered, 2) < 100 && allow_purchase) {
-					this.frm.add_custom_button(__('Purchase Order'),
-						function() { me.make_purchase_order() }, __("Make"));
-				}
+                        // make purchase order
+                        if (flt(doc.per_delivered, 2) < 100 && allow_purchase) {
+                            this.frm.add_custom_button(__('Purchase Order'),
+                                function() { me.make_purchase_order() }, __("Make"));
+                        }
 
-				// payment request
-				if(flt(doc.per_billed)==0) {
-					this.frm.add_custom_button(__('Payment Request'),
-						function() { me.make_payment_request() }, __("Make"));
-					this.frm.add_custom_button(__('Payment'),
-						function() { me.make_payment_entry() }, __("Make"));
-				}
+                        // payment request
+                        if (flt(doc.per_billed) == 0) {
+                            this.frm.add_custom_button(__('Payment Request'),
+                                function() { me.make_payment_request() }, __("Make"));
+                            this.frm.add_custom_button(__('Payment'),
+                                function() { me.make_payment_entry() }, __("Make"));
+                        }
 
-				// maintenance
-				if(flt(doc.per_delivered, 2) < 100 &&
-						["Sales", "Shopping Cart"].indexOf(doc.order_type)===-1) {
-					this.frm.add_custom_button(__('Maintenance Visit'),
-						function() { me.make_maintenance_visit() }, __("Make"));
-					this.frm.add_custom_button(__('Maintenance Schedule'),
-						function() { me.make_maintenance_schedule() }, __("Make"));
-				}
+                        // maintenance
+                        if (flt(doc.per_delivered, 2) < 100 && ["Sales", "Shopping Cart"].indexOf(doc.order_type) === -1) {
+                            this.frm.add_custom_button(__('Maintenance Visit'),
+                                function() { me.make_maintenance_visit() }, __("Make"));
+                            this.frm.add_custom_button(__('Maintenance Schedule'),
+                                function() { me.make_maintenance_schedule() }, __("Make"));
+                        }
 
-				// project
-				if(flt(doc.per_delivered, 2) < 100 && ["Sales", "Shopping Cart"].indexOf(doc.order_type)!==-1 && allow_delivery) {
-						this.frm.add_custom_button(__('Project'),
-							function() { me.make_project() }, __("Make"));
-				}
+                        // project
+                        if (flt(doc.per_delivered, 2) < 100 && ["Sales", "Shopping Cart"].indexOf(doc.order_type) !== -1 && allow_delivery) {
+                            this.frm.add_custom_button(__('Project'),
+                                function() { me.make_project() }, __("Make"));
+                        }
 
-				if(!doc.subscription) {
-					this.frm.add_custom_button(__('Subscription'), function() {
-						erpnext.utils.make_subscription(doc.doctype, doc.name)
-					}, __("Make"))
-				}
+                        if (!doc.subscription) {
+                            this.frm.add_custom_button(__('Subscription'), function() {
+                                erpnext.utils.make_subscription(doc.doctype, doc.name)
+                            }, __("Make"))
+                        }
 
-			} else {
-				if (this.frm.has_perm("submit")) {
-					// un-close
-					this.frm.add_custom_button(__('Re-open'), function() {
-						me.frm.cscript.update_status('Re-open', 'Draft')
-					}, __("Status"));
-				}
-			}
-		}
+                    } else {
+                        if (this.frm.has_perm("submit")) {
+                            // un-close
+                            this.frm.add_custom_button(__('Re-open'), function() {
+                                me.frm.cscript.update_status('Re-open', 'Draft')
+                            }, __("Status"));
+                        }
+                    }
+                }
 
-		if (this.frm.doc.docstatus===0) {
-			this.frm.add_custom_button(__('Quotation'),
-				function() {
-					erpnext.utils.map_current_doc({
-						method: "erpnext.selling.doctype.quotation.quotation.make_sales_order",
-						source_doctype: "Quotation",
-						target: me.frm,
-						setters: {
-							customer: me.frm.doc.customer || undefined
-						},
-						get_query_filters: {
-							company: me.frm.doc.company,
-							docstatus: 1,
-							status: ["!=", "Lost"],
-						}
-					})
-				}, __("Get items from"));
-		}
+                if (this.frm.doc.docstatus === 0) {
+                    this.frm.add_custom_button(__('Quotation'),
+                        function() {
+                            erpnext.utils.map_current_doc({
+                                method: "erpnext.selling.doctype.quotation.quotation.make_sales_order",
+                                source_doctype: "Quotation",
+                                target: me.frm,
+                                setters: {
+                                    customer: me.frm.doc.customer || undefined
+                                },
+                                get_query_filters: {
+                                    company: me.frm.doc.company,
+                                    docstatus: 1,
+                                    status: ["!=", "Lost"],
+                                }
+                            })
+                        }, __("Get items from"));
+                }
 
-		this.order_type(doc);
-	},
+                this.order_type(doc);
+            },
 
-	make_production_order() {
-		var me = this;
-		this.frm.call({
-			doc: this.frm.doc,
-			method: 'get_production_order_items',
-			callback: function(r) {
-				if(!r.message) {
-					frappe.msgprint({
-						title: __('Production Order not created'),
-						message: __('No Items with Bill of Materials to Manufacture'),
-						indicator: 'orange'
-					});
-					return;
-				}
-				else if(!r.message.every(function(d) { return !!d.pending_qty })) {
-					frappe.msgprint({
-						title: __('Production Order not created'),
-						message: __('Production Order already created for all items with BOM'),
-						indicator: 'orange'
-					});
-					return;
-				} else {
-					var fields = [
-						{fieldtype:'Table', fieldname: 'items',
-							description: __('Select BOM and Qty for Production'),
-							fields: [
-								{fieldtype:'Read Only', fieldname:'item_code',
-									label: __('Item Code'), in_list_view:1},
-								{fieldtype:'Link', fieldname:'bom', options: 'BOM', reqd: 1,
-									label: __('Select BOM'), in_list_view:1, get_query: function(doc) {
-										return {filters: {item: doc.item_code}};
-									}},
-								{fieldtype:'Float', fieldname:'pending_qty', reqd: 1,
-									label: __('Qty'), in_list_view:1},
-							],
-							get_data: function() {
-								return r.message
-							}
-						}
-					]
-					var d = new frappe.ui.Dialog({
-						title: __('Select Items to Manufacture'),
-						fields: fields,
-						primary_action: function() {
-							var data = d.get_values();
-							me.frm.call({
-								method: 'make_production_orders',
-								args: {
-									items: data,
-									company: me.frm.doc.company,
-									sales_order: me.frm.docname,
-									project: me.frm.project
-								},
-								freeze: true,
-								callback: function(r) {
-									if(r.message) {
-										frappe.msgprint({
-											message: __('Production Orders Created: {0}',
-												[r.message.map(function(d) {
-													return repl('<a href="#Form/Production Order/%(name)s">%(name)s</a>', {name:d})
-												}).join(', ')]),
-											indicator: 'green'
-										})
-									}
-									d.hide();
-								}
-							});
-						},
-						primary_action_label: __('Make')
-					});
-					d.show();
-				}
-			}
-		});
-	},
+            make_production_order() {
+                var me = this;
+                this.frm.call({
+                    doc: this.frm.doc,
+                    method: 'get_production_order_items',
+                    callback: function(r) {
+                        if (!r.message) {
+                            frappe.msgprint({
+                                title: __('Production Order not created'),
+                                message: __('No Items with Bill of Materials to Manufacture'),
+                                indicator: 'orange'
+                            });
+                            return;
+                        } else if (!r.message.every(function(d) { return !!d.pending_qty })) {
+                            frappe.msgprint({
+                                title: __('Production Order not created'),
+                                message: __('Production Order already created for all items with BOM'),
+                                indicator: 'orange'
+                            });
+                            return;
+                        } else {
+                            var fields = [{
+                                fieldtype: 'Table',
+                                fieldname: 'items',
+                                description: __('Select BOM and Qty for Production'),
+                                fields: [{
+                                        fieldtype: 'Read Only',
+                                        fieldname: 'item_code',
+                                        label: __('Item Code'),
+                                        in_list_view: 1
+                                    },
+                                    {
+                                        fieldtype: 'Link',
+                                        fieldname: 'bom',
+                                        options: 'BOM',
+                                        reqd: 1,
+                                        label: __('Select BOM'),
+                                        in_list_view: 1,
+                                        get_query: function(doc) {
+                                            return { filters: { item: doc.item_code } };
+                                        }
+                                    },
+                                    {
+                                        fieldtype: 'Float',
+                                        fieldname: 'pending_qty',
+                                        reqd: 1,
+                                        label: __('Qty'),
+                                        in_list_view: 1
+                                    },
+                                ],
+                                get_data: function() {
+                                    return r.message
+                                }
+                            }]
+                            var d = new frappe.ui.Dialog({
+                                title: __('Select Items to Manufacture'),
+                                fields: fields,
+                                primary_action: function() {
+                                    var data = d.get_values();
+                                    me.frm.call({
+                                        method: 'make_production_orders',
+                                        args: {
+                                            items: data,
+                                            company: me.frm.doc.company,
+                                            sales_order: me.frm.docname,
+                                            project: me.frm.project
+                                        },
+                                        freeze: true,
+                                        callback: function(r) {
+                                            if (r.message) {
+                                                frappe.msgprint({
+                                                    message: __('Production Orders Created: {0}', [r.message.map(function(d) {
+                                                        return repl('<a href="#Form/Production Order/%(name)s">%(name)s</a>', { name: d })
+                                                    }).join(', ')]),
+                                                    indicator: 'green'
+                                                })
+                                            }
+                                            d.hide();
+                                        }
+                                    });
+                                },
+                                primary_action_label: __('Make')
+                            });
+                            d.show();
+                        }
+                    }
+                });
+            },
 
-	order_type: function() {
-		this.frm.fields_dict.items.grid.toggle_reqd("delivery_date", this.frm.doc.order_type == "Sales");
-	},
+            order_type: function() {
+                this.frm.fields_dict.items.grid.toggle_reqd("delivery_date", this.frm.doc.order_type == "Sales");
+            },
 
-	tc_name: function() {
-		this.get_terms();
-	},
+            tc_name: function() {
+                this.get_terms();
+            },
 
-	make_material_request: function() {
-		frappe.model.open_mapped_doc({
-			method: "erpnext.selling.doctype.sales_order.sales_order.make_material_request",
-			frm: this.frm
-		})
-	},
+            make_material_request: function() {
+                frappe.model.open_mapped_doc({
+                    method: "erpnext.selling.doctype.sales_order.sales_order.make_material_request",
+                    frm: this.frm
+                })
+            },
 
-	make_delivery_note_based_on_delivery_date: function() {
-		var me = this;
-		
-		var delivery_dates = [];
-		$.each(this.frm.doc.items || [], function(i, d) {
-			if(!delivery_dates.includes(d.delivery_date)) {
-				delivery_dates.push(d.delivery_date);
-			}
-		});
-		
-		var item_grid = this.frm.fields_dict["items"].grid;
-		if(!item_grid.get_selected().length && delivery_dates.length > 1) {
-			var dialog = new frappe.ui.Dialog({
-				title: __("Select Items based on Delivery Date"),
-				fields: [{fieldtype: "HTML", fieldname: "dates_html"}]
-			});
-			
-			var html = $(`
+            make_delivery_note_based_on_delivery_date: function() {
+                    var me = this;
+
+                    var delivery_dates = [];
+                    $.each(this.frm.doc.items || [], function(i, d) {
+                        if (!delivery_dates.includes(d.delivery_date)) {
+                            delivery_dates.push(d.delivery_date);
+                        }
+                    });
+
+                    var item_grid = this.frm.fields_dict["items"].grid;
+                    if (!item_grid.get_selected().length && delivery_dates.length > 1) {
+                        var dialog = new frappe.ui.Dialog({
+                            title: __("Select Items based on Delivery Date"),
+                            fields: [{ fieldtype: "HTML", fieldname: "dates_html" }]
+                        });
+
+                        var html = $(`
 				<div style="border: 1px solid #d1d8dd">
 					<div class="list-item list-item--head">
 						<div class="list-item__content list-item__content--flex-2">
@@ -315,7 +331,7 @@ erpnext.selling.SalesOrderController = erpnext.selling.SellingController.extend(
 					.map((i, el) => $(el).attr('data-date')).toArray();
 
 				if(!dates) return;
-				
+
 				$.each(dates, function(i, d) {
 					$.each(item_grid.grid_rows || [], function(j, row) {
 						if(row.doc.delivery_date == d) {
